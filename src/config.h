@@ -14,3 +14,6 @@
 #define LCD_MIRROR 0xC0
 #define LCD_BGR 1
 #define LCD_INVERT 0
+
+// 1 desenha a imagem de cabeça para baixo, para a placa montada invertida.
+#define LCD_ROTATE_180 1

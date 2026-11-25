@@ -105,7 +105,8 @@ void push(const uint16_t* fb) {
   window(LCD_COL_OFFSET, LCD_ROW_OFFSET, LCD_COL_OFFSET + hud::W - 1, LCD_ROW_OFFSET + hud::H - 1);
   for (int y = 0; y < hud::H; y++) {
     for (int x = 0; x < hud::W; x++) {
-      const uint16_t c = fb[y * hud::W + x];
+      const int i = y * hud::W + x;
+      const uint16_t c = fb[LCD_ROTATE_180 ? hud::W * hud::H - 1 - i : i];
       line[x * 2] = c >> 8;
       line[x * 2 + 1] = c & 0xFF;
     }
