@@ -1,3 +1,4 @@
 .pio/
 out/
 backup/
+__pycache__/

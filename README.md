@@ -23,6 +23,9 @@ número, quantas sessões estão abertas.
 
 Pinos e calibração do recorte visível ficam em `src/config.h`.
 
+Sem CS, o visor não tem como retomar o alinhamento dos bytes. Se a imagem
+congelar, desligue a placa da energia por alguns segundos e ligue de novo.
+
 ## Como funciona
 
 O Claude Code dispara hooks a cada mudança de estado. Cada hook chama
@@ -84,13 +87,42 @@ echo '{"session_id":"teste"}' | host/claude-hud-hook end
 
 `CLAUDE_HUD_SOURCE` troca a origem mostrada e `CLAUDE_HUD_DEVICE`, a porta.
 
+## Sessões em outra máquina
+
+Uma máquina remota, como uma VPS, não alcança a placa. Lá o hook grava os
+eventos em um arquivo, e a máquina com a placa acompanha esse arquivo por ssh.
+
+Na máquina remota, clone o repositório, instale os mesmos hooks e crie
+`~/.config/claude-hud/env`:
+
+```sh
+CLAUDE_HUD_SOURCE=cloud
+CLAUDE_HUD_LOG=$HOME/.local/state/claude-hud/events
+```
+
+Na máquina com a placa, deixe a ponte rodando. Ela usa `ssh <host>` sem senha
+e sem perguntas, então o acesso por chave precisa estar pronto:
+
+```sh
+mkdir -p ~/.config/systemd/user
+cp host/claude-hud-bridge@.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now claude-hud-bridge@vps
+```
+
+O nome depois do `@` é o host ssh. A unidade espera o repositório em
+`~/Work/samuel-morrissey/claude-hud`; ajuste o `ExecStart` se for outro.
+
+Quando a conexão cai, a ponte encerra na placa as sessões daquela máquina e
+tenta de novo a cada 5 segundos.
+
 ## Desenvolvimento
 
 O desenho (`src/render.cpp`) e o controle das sessões (`src/tracker.cpp`) não
 dependem de Arduino e compilam no PC.
 
 ```sh
-make test      # testes do controle de sessões
+make test      # testes do controle de sessões e da ponte
 make preview   # gera out/preview.png com quadros de cada estado
 make firmware  # compila o firmware
 ```

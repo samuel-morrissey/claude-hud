@@ -5,14 +5,22 @@
 #   estado: start | thinking | working | waiting | done | end
 #
 # Lê da entrada padrão o JSON que o Claude Code entrega aos hooks. Nunca falha
-# nem trava: sem a placa ligada, sai em silêncio.
+# nem trava: sem ter para onde mandar, sai em silêncio.
 #
-# Variáveis:
+# Na máquina com a placa, o evento vai direto para a serial USB. Em uma máquina
+# remota, vai para um arquivo que o claude-hud-bridge acompanha por ssh.
+#
+# Variáveis, do ambiente ou de ~/.config/claude-hud/env:
 #   CLAUDE_HUD_SOURCE  origem mostrada no visor: pc (padrão), cloud ou phone
 #   CLAUDE_HUD_DEVICE  porta serial da placa; por padrão, a primeira Espressif
+#   CLAUDE_HUD_LOG     arquivo de eventos; definido, substitui a serial
 
 state=${1:-}
 [ -n "$state" ] || exit 0
+
+config=${XDG_CONFIG_HOME:-$HOME/.config}/claude-hud/env
+# shellcheck disable=SC1090
+[ -r "$config" ] && . "$config"
 
 source_name=${CLAUDE_HUD_SOURCE:-pc}
 session=-
@@ -29,6 +37,19 @@ if [ ! -t 0 ] && command -v jq >/dev/null 2>&1; then
   fi
 fi
 
+event="$source_name $state ${session:--}"
+
+if [ -n "${CLAUDE_HUD_LOG:-}" ]; then
+  mkdir -p "$(dirname "$CLAUDE_HUD_LOG")" 2>/dev/null
+  printf '%s %s\n' "$(date +%s)" "$event" >>"$CLAUDE_HUD_LOG" 2>/dev/null
+  # Mantém o arquivo pequeno. Quem acompanha relê o que sobrou e descarta o
+  # que já viu pela hora de cada linha.
+  if [ "$(stat -c %s "$CLAUDE_HUD_LOG" 2>/dev/null || echo 0)" -gt 65536 ]; then
+    kept=$(tail -n 100 "$CLAUDE_HUD_LOG") && printf '%s\n' "$kept" >"$CLAUDE_HUD_LOG"
+  fi
+  exit 0
+fi
+
 device=${CLAUDE_HUD_DEVICE:-}
 if [ -z "$device" ]; then
   for candidate in /dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_*; do
@@ -40,5 +61,5 @@ fi
 # Sem eco: com ele, o que a placa escreve voltaria para ela como comando.
 stty -F "$device" 115200 raw -echo -hupcl 2>/dev/null
 
-timeout 1 bash -c 'printf "%s\n" "$1" >"$2"' _ "$source_name $state ${session:--}" "$device" 2>/dev/null
+timeout 1 bash -c 'printf "%s\n" "$1" >"$2"' _ "$event" "$device" 2>/dev/null
 exit 0
