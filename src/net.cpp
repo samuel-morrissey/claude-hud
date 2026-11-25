@@ -32,10 +32,11 @@ Config load() {
   Preferences prefs;
   Config c;
   if (prefs.begin("hud-net", true)) {
-    c.ssid = prefs.getString("ssid", "");
-    c.pass = prefs.getString("pass", "");
-    c.host = prefs.getString("host", "");
-    c.token = prefs.getString("token", "");
+    // getString registra um erro para item ausente; isKey evita o ruído.
+    if (prefs.isKey("ssid")) c.ssid = prefs.getString("ssid");
+    if (prefs.isKey("pass")) c.pass = prefs.getString("pass");
+    if (prefs.isKey("host")) c.host = prefs.getString("host");
+    if (prefs.isKey("token")) c.token = prefs.getString("token");
     prefs.end();
   }
   return c;
