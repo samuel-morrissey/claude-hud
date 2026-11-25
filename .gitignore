@@ -2,3 +2,4 @@
 out/
 backup/
 __pycache__/
+.env
