@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Avisa o claude-hud sobre o estado de uma sessão do Claude Code.
+#
+# Uso, como hook: claude-hud-hook <estado>
+#   estado: start | thinking | working | waiting | done | end
+#
+# Lê da entrada padrão o JSON que o Claude Code entrega aos hooks. Nunca falha
+# nem trava: sem a placa ligada, sai em silêncio.
+#
+# Variáveis:
+#   CLAUDE_HUD_SOURCE  origem mostrada no visor: pc (padrão), cloud ou phone
+#   CLAUDE_HUD_DEVICE  porta serial da placa; por padrão, a primeira Espressif
+
+state=${1:-}
+[ -n "$state" ] || exit 0
+
+source_name=${CLAUDE_HUD_SOURCE:-pc}
+session=-
+
+if [ ! -t 0 ] && command -v jq >/dev/null 2>&1; then
+  payload=$(cat)
+  session=$(jq -r '(.session_id // "-")[0:8]' <<<"$payload" 2>/dev/null)
+  # Uma pergunta ao usuário é uma ferramenta, mas quem trabalha agora é a pessoa.
+  if [ "$state" = working ]; then
+    tool=$(jq -r '.tool_name // ""' <<<"$payload" 2>/dev/null)
+    case $tool in
+      AskUserQuestion | ExitPlanMode) state=waiting ;;
+    esac
+  fi
+fi
+
+device=${CLAUDE_HUD_DEVICE:-}
+if [ -z "$device" ]; then
+  for candidate in /dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_*; do
+    [ -e "$candidate" ] && device=$candidate && break
+  done
+fi
+[ -n "$device" ] && [ -w "$device" ] || exit 0
+
+# Sem eco: com ele, o que a placa escreve voltaria para ela como comando.
+stty -F "$device" 115200 raw -echo -hupcl 2>/dev/null
+
+timeout 1 bash -c 'printf "%s\n" "$1" >"$2"' _ "$source_name $state ${session:--}" "$device" 2>/dev/null
+exit 0

@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "/caminho/para/claude-hud/host/claude-hud-hook start", "async": true }] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "/caminho/para/claude-hud/host/claude-hud-hook thinking", "async": true }] }
+    ],
+    "PreToolUse": [
+      { "hooks": [{ "type": "command", "command": "/caminho/para/claude-hud/host/claude-hud-hook working", "async": true }] }
+    ],
+    "PostToolUse": [
+      { "hooks": [{ "type": "command", "command": "/caminho/para/claude-hud/host/claude-hud-hook thinking", "async": true }] }
+    ],
+    "Notification": [
+      {
+        "matcher": "permission_prompt|elicitation_dialog",
+        "hooks": [{ "type": "command", "command": "/caminho/para/claude-hud/host/claude-hud-hook waiting", "async": true }]
+      }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "/caminho/para/claude-hud/host/claude-hud-hook done", "async": true }] }
+    ],
+    "SessionEnd": [
+      { "hooks": [{ "type": "command", "command": "/caminho/para/claude-hud/host/claude-hud-hook end", "async": true }] }
+    ]
+  }
+}
