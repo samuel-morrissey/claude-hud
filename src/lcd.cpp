@@ -1,7 +1,7 @@
 #include "lcd.h"
 
 #include <Arduino.h>
-#include <SPI.h>
+#include <esp32-hal-spi.h>
 
 #include "config.h"
 #include "render.h"
@@ -25,12 +25,13 @@ constexpr int RAM_COLS = 128;
 constexpr int RAM_ROWS = 160;
 
 uint8_t line[hud::W * 2];
+spi_t* bus = nullptr;
 
 void command(uint8_t cmd, const uint8_t* data = nullptr, size_t len = 0) {
   digitalWrite(LCD_PIN_DC, LOW);
-  SPI.transfer(cmd);
+  spiWriteNL(bus, &cmd, 1);
   digitalWrite(LCD_PIN_DC, HIGH);
-  if (len) SPI.writeBytes(data, len);
+  if (len) spiWriteNL(bus, data, len);
 }
 
 void window(int x0, int y0, int x1, int y1) {
@@ -41,24 +42,42 @@ void window(int x0, int y0, int x1, int y1) {
   command(RAMWR);
 }
 
-void begin_bus() {
-  SPI.beginTransaction(SPISettings(LCD_SPI_HZ, MSBFIRST, SPI_MODE3));
+// Sem CS, o visor nunca ressincroniza: uma única borda falsa no relógio
+// desalinha os bits até a próxima vez que ele for desligado. Por isso o
+// relógio já sobe antes de virar saída, e o barramento faz uma transferência
+// no vazio, que fixa o repouso em nível alto, antes de assumir os pinos.
+void start_bus() {
+  digitalWrite(LCD_PIN_SCL, HIGH);
+  pinMode(LCD_PIN_SCL, OUTPUT);
+  pinMode(LCD_PIN_DC, OUTPUT);
+  digitalWrite(LCD_PIN_DC, HIGH);
+
+  bus = spiStartBus(FSPI, spiFrequencyToClockDiv(LCD_SPI_HZ), SPI_MODE3, SPI_MSBFIRST);
+  const uint8_t idle = 0;
+  spiSimpleTransaction(bus);
+  spiWriteNL(bus, &idle, 1);
+  spiEndTransaction(bus);
+
+  spiAttachSCK(bus, LCD_PIN_SCL);
+  spiAttachMOSI(bus, LCD_PIN_SDA);
 }
 
 }  // namespace
 
 void begin() {
-  pinMode(LCD_PIN_DC, OUTPUT);
-  digitalWrite(LCD_PIN_DC, HIGH);
-  SPI.begin(LCD_PIN_SCL, -1, LCD_PIN_SDA, -1);
-
+  start_bus();
   delay(200);
-  begin_bus();
+
+  spiSimpleTransaction(bus);
   command(SWRESET);
+  spiEndTransaction(bus);
   delay(150);
+  spiSimpleTransaction(bus);
   command(SLPOUT);
+  spiEndTransaction(bus);
   delay(120);
 
+  spiSimpleTransaction(bus);
   const uint8_t colmod = 0x05;  // 16 bits por pixel
   command(COLMOD, &colmod, 1);
   const uint8_t madctl = (LCD_MIRROR & 0xC0) | (LCD_BGR ? 0x08 : 0x00);
@@ -68,19 +87,21 @@ void begin() {
   // Apaga a memória inteira: fora do recorte visível sobra lixo do reset.
   window(0, 0, RAM_COLS - 1, RAM_ROWS - 1);
   memset(line, 0, sizeof(line));
-  for (int sent = 0; sent < RAM_COLS * RAM_ROWS * 2; sent += sizeof(line)) {
-    SPI.writeBytes(line, sizeof(line));
+  for (int left = RAM_COLS * RAM_ROWS * 2; left > 0; left -= sizeof(line)) {
+    spiWriteNL(bus, line, left < static_cast<int>(sizeof(line)) ? left : sizeof(line));
   }
 
   command(NORON);
+  spiEndTransaction(bus);
   delay(10);
+  spiSimpleTransaction(bus);
   command(DISPON);
+  spiEndTransaction(bus);
   delay(20);
-  SPI.endTransaction();
 }
 
 void push(const uint16_t* fb) {
-  begin_bus();
+  spiSimpleTransaction(bus);
   window(LCD_COL_OFFSET, LCD_ROW_OFFSET, LCD_COL_OFFSET + hud::W - 1, LCD_ROW_OFFSET + hud::H - 1);
   for (int y = 0; y < hud::H; y++) {
     for (int x = 0; x < hud::W; x++) {
@@ -88,9 +109,9 @@ void push(const uint16_t* fb) {
       line[x * 2] = c >> 8;
       line[x * 2 + 1] = c & 0xFF;
     }
-    SPI.writeBytes(line, sizeof(line));
+    spiWriteNL(bus, line, sizeof(line));
   }
-  SPI.endTransaction();
+  spiEndTransaction(bus);
 }
 
 }  // namespace lcd
