@@ -27,3 +27,7 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+      # O Traefik só roteia para contêiner saudável. Sem uma primeira checagem
+      # rápida, o endereço responde 404 por 30 segundos a cada partida.
+      start_period: 15s
+      start_interval: 1s
