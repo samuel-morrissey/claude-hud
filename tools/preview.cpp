@@ -32,7 +32,8 @@ int main() {
   for (int r = 0; r < kRows; r++) {
     for (int c = 0; c < kCols; c++) {
       const uint32_t t = 1000 + c * kStepMs;
-      render(View{rows[r].state, rows[r].source, rows[r].sessions, t, c * kStepMs}, fb.data());
+      const View view{rows[r].state, rows[r].source, rows[r].sessions, t, c * kStepMs, r == 1};
+      render(view, fb.data());
       const int ox = kGap + c * (W * kScale + kGap);
       const int oy = kGap + r * (H * kScale + kGap);
       for (int y = 0; y < H * kScale; y++) {

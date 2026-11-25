@@ -28,8 +28,18 @@ congelar, desligue a placa da energia por alguns segundos e ligue de novo.
 
 ## Como funciona
 
+```
+hooks do Claude Code ──POST /events──▶ recadeiro ──GET /stream──▶ placa (Wi-Fi)
+   (PC, VPS, ...)                    (relay/server.py)
+```
+
 O Claude Code dispara hooks a cada mudança de estado. Cada hook chama
-`host/claude-hud-hook`, que escreve uma linha na serial USB da placa:
+`host/claude-hud-hook`, que manda um evento ao recadeiro. A placa mantém uma
+conexão aberta com o recadeiro e recebe os eventos conforme chegam. Assim a
+placa só precisa de energia e Wi-Fi, e qualquer máquina com acesso à internet
+pode aparecer no visor.
+
+Um evento é uma linha:
 
 ```
 <origem> <estado> [id]
@@ -41,7 +51,8 @@ O Claude Code dispara hooks a cada mudança de estado. Cada hook chama
 
 A placa guarda até 8 sessões e mostra a mais urgente: esperando você, depois
 trabalhando, pensando, terminou e parado. Uma sessão sem eventos há 30 minutos
-é descartada.
+é descartada. Sem conexão com o recadeiro, aparecem barrinhas de sinal
+riscadas no canto.
 
 | Hook do Claude Code              | Estado     |
 | -------------------------------- | ---------- |
@@ -54,16 +65,33 @@ trabalhando, pensando, terminou e parado. Uma sessão sem eventos há 30 minutos
 | `Stop`                           | `done`     |
 | `SessionEnd`                     | `end`      |
 
-A serial também aceita `ping`, `demo` (passeia por todos os estados) e `shot`
-(devolve o quadro atual em hexadecimal).
+## Instalação
 
-## Gravar a placa
+### 1. Recadeiro
 
-Requer [PlatformIO](https://platformio.org/).
+Um servidor HTTP pequeno, sem dependências, em `relay/`. O `docker-compose.yml`
+supõe um Traefik que publica serviços por labels e emite certificados Let's
+Encrypt. A placa só confia nas raízes da Let's Encrypt (`src/roots.h`).
+
+```sh
+cd relay
+cp .env.example .env    # RELAY_HOST e RELAY_TOKEN (openssl rand -hex 32)
+docker compose up -d --build
+```
+
+### 2. Placa
+
+Requer [PlatformIO](https://platformio.org/). Grave o firmware e depois a
+configuração de rede, com a placa ligada por USB:
 
 ```sh
 make flash
+host/claude-hud-setup
 ```
+
+O `claude-hud-setup` pergunta o nome e a senha do Wi-Fi (só 2,4 GHz) e lê o
+endereço e o segredo do recadeiro de `~/.config/claude-hud/env`. Tudo fica
+gravado na placa; depois disso ela pode ir para qualquer fonte USB.
 
 No Linux, o usuário precisa de acesso à porta serial. Uma regra de udev resolve
 para qualquer placa Espressif:
@@ -73,10 +101,18 @@ echo 'SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", MODE="0666"' | sudo tee /etc/ud
 sudo udevadm control --reload && sudo udevadm trigger --subsystem-match=tty
 ```
 
-## Ligar ao Claude Code
+### 3. Cada máquina com Claude Code
+
+Crie `~/.config/claude-hud/env`, com permissão 600:
+
+```sh
+CLAUDE_HUD_SOURCE=pc    # ou cloud, em um servidor
+CLAUDE_HUD_URL=https://hud.example.com
+CLAUDE_HUD_TOKEN=<o RELAY_TOKEN>
+```
 
 Copie os hooks de `host/hooks.example.json` para `~/.claude/settings.json`,
-trocando o caminho pelo deste repositório. O script depende de `jq`.
+trocando o caminho pelo deste repositório. O script depende de `jq` e `curl`.
 
 Para testar sem o Claude Code:
 
@@ -85,36 +121,21 @@ echo '{"session_id":"teste"}' | host/claude-hud-hook working
 echo '{"session_id":"teste"}' | host/claude-hud-hook end
 ```
 
-`CLAUDE_HUD_SOURCE` troca a origem mostrada e `CLAUDE_HUD_DEVICE`, a porta.
+Sem `CLAUDE_HUD_URL`, o hook escreve direto na serial USB da placa, o que
+dispensa recadeiro e Wi-Fi quando placa e Claude Code estão na mesma máquina.
 
-## Sessões em outra máquina
+## Serial
 
-Uma máquina remota, como uma VPS, não alcança a placa. Lá o hook grava os
-eventos em um arquivo, e a máquina com a placa acompanha esse arquivo por ssh.
+Com a placa no USB, a serial aceita os mesmos eventos e mais:
 
-Na máquina remota, clone o repositório, instale os mesmos hooks e crie
-`~/.config/claude-hud/env`:
-
-```sh
-CLAUDE_HUD_SOURCE=cloud
-CLAUDE_HUD_LOG=$HOME/.local/state/claude-hud/events
-```
-
-Na máquina com a placa, deixe a ponte rodando. Ela usa `ssh <host>` sem senha
-e sem perguntas, então o acesso por chave precisa estar pronto:
-
-```sh
-mkdir -p ~/.config/systemd/user
-cp host/claude-hud-bridge@.service ~/.config/systemd/user/
-systemctl --user daemon-reload
-systemctl --user enable --now claude-hud-bridge@vps
-```
-
-O nome depois do `@` é o host ssh. A unidade espera o repositório em
-`~/Work/samuel-morrissey/claude-hud`; ajuste o `ExecStart` se for outro.
-
-Quando a conexão cai, a ponte encerra na placa as sessões daquela máquina e
-tenta de novo a cada 5 segundos.
+| Comando              | Efeito                                         |
+| -------------------- | ---------------------------------------------- |
+| `ping`               | responde `pong claude-hud`                     |
+| `demo`               | liga/desliga um passeio por todos os estados   |
+| `shot`               | devolve o quadro atual em hexadecimal          |
+| `set <item> <valor>` | grava `ssid`, `pass`, `host` ou `token`        |
+| `apply`              | reconecta com o que foi gravado                |
+| `status`             | estado da rede, sem revelar senha nem segredo  |
 
 ## Desenvolvimento
 
@@ -122,7 +143,7 @@ O desenho (`src/render.cpp`) e o controle das sessões (`src/tracker.cpp`) não
 dependem de Arduino e compilam no PC.
 
 ```sh
-make test      # testes do controle de sessões e da ponte
+make test      # testes do controle de sessões e do recadeiro
 make preview   # gera out/preview.png com quadros de cada estado
 make firmware  # compila o firmware
 ```

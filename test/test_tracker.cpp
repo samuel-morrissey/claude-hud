@@ -120,6 +120,15 @@ static void aceita_linha_sem_id_e_com_fim_de_linha() {
   CHECK(t.view(11).state == State::Done);
 }
 
+static void reset_esquece_todas_as_sessoes() {
+  Tracker t;
+  t.handle("pc working a", 0);
+  t.handle("cloud waiting b", 0);
+  CHECK(t.handle("reset", 10));
+  CHECK(t.view(20).sessions == 0);
+  CHECK(t.view(20).state == State::Sleep);
+}
+
 int main() {
   sem_sessoes_dorme();
   segue_o_ciclo_de_uma_sessao();
@@ -131,6 +140,7 @@ int main() {
   tabela_cheia_descarta_a_mais_antiga();
   recusa_linhas_invalidas();
   aceita_linha_sem_id_e_com_fim_de_linha();
+  reset_esquece_todas_as_sessoes();
 
   if (failures) {
     std::printf("%d falha(s)\n", failures);

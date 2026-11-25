@@ -74,7 +74,11 @@ void Tracker::expire(uint32_t now) {
 bool Tracker::handle(const char* line, uint32_t now) {
   char source_name[8], state_name[10], id[12];
   if (!word(&line, source_name, sizeof(source_name))) return false;
-  if (!word(&line, state_name, sizeof(state_name))) return false;
+  if (!word(&line, state_name, sizeof(state_name))) {
+    if (strcmp(source_name, "reset") != 0) return false;
+    for (Session& s : sessions_) s.used = false;
+    return true;
+  }
   if (!word(&line, id, sizeof(id))) strcpy(id, "-");
 
   Source source;
@@ -128,7 +132,7 @@ View Tracker::view(uint32_t now) {
     }
   }
 
-  View v{State::Sleep, Source::Pc, count, now, 0};
+  View v{State::Sleep, Source::Pc, count, now, 0, false};
   if (!best) return v;
 
   v.source = best->source;

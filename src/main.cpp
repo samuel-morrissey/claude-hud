@@ -1,14 +1,20 @@
 // claude-hud: mostra no visor o que o Claude Code está fazendo.
 //
-// Recebe eventos pela serial USB, um por linha: "<origem> <estado> [id]".
-// Comandos extras:
-//   ping   responde "pong claude-hud"
-//   demo   liga/desliga um passeio por todos os estados
-//   shot   devolve o quadro atual em hexadecimal
+// Recebe eventos do recadeiro, pelo Wi-Fi, e da serial USB. Um por linha:
+// "<origem> <estado> [id]".
+//
+// Comandos extras da serial:
+//   ping                responde "pong claude-hud"
+//   demo                liga/desliga um passeio por todos os estados
+//   shot                devolve o quadro atual em hexadecimal
+//   set <item> <valor>  grava ssid, pass, host ou token da rede
+//   apply               reconecta com o que foi gravado
+//   status              descreve o estado da rede
 
 #include <Arduino.h>
 
 #include "lcd.h"
+#include "net.h"
 #include "render.h"
 #include "tracker.h"
 
@@ -20,7 +26,7 @@ constexpr uint32_t kDemoStepMs = 4000;
 hud::Tracker tracker;
 uint16_t fb[hud::W * hud::H];
 
-char line[64];
+char line[200];
 size_t line_len = 0;
 
 bool demo = false;
@@ -34,7 +40,7 @@ hud::View demo_view(uint32_t now) {
   const uint32_t elapsed = now - demo_start;
   const uint32_t step = elapsed / kDemoStepMs;
   return hud::View{states[step % 6], sources[(step / 6) % 3], static_cast<uint8_t>(1 + (step / 6) % 3), now,
-                   elapsed % kDemoStepMs};
+                   elapsed % kDemoStepMs, false};
 }
 
 void shot() {
@@ -54,6 +60,17 @@ void handle_line(const char* text, uint32_t now) {
     demo_start = now;
   } else if (strcmp(text, "shot") == 0) {
     shot();
+  } else if (strncmp(text, "set ", 4) == 0) {
+    const char* key = text + 4;
+    const char* space = strchr(key, ' ');
+    char name[8] = "";
+    if (space && static_cast<size_t>(space - key) < sizeof(name)) memcpy(name, key, space - key);
+    Serial.println(space && net::set(name, space + 1) ? "ok" : "erro");
+  } else if (strcmp(text, "apply") == 0) {
+    net::apply();
+    Serial.println("ok");
+  } else if (strcmp(text, "status") == 0) {
+    net::status(Serial);
   } else if (tracker.handle(text, now)) {
     demo = false;
   }
@@ -80,15 +97,23 @@ void setup() {
   Serial.begin(115200);
   Serial.setTxTimeoutMs(50);
   lcd::begin();
+  net::begin();
 }
 
 void loop() {
   const uint32_t now = millis();
   read_serial(now);
 
+  char event[48];
+  while (net::poll(event, sizeof(event))) {
+    if (tracker.handle(event, now)) demo = false;
+  }
+
   if (now - last_frame >= kFrameMs) {
     last_frame = now;
-    hud::render(demo ? demo_view(now) : tracker.view(now), fb);
+    hud::View view = demo ? demo_view(now) : tracker.view(now);
+    view.offline = net::configured() && !net::online();
+    hud::render(view, fb);
     lcd::push(fb);
   }
 }

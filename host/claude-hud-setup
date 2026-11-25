@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# Grava na placa, pela serial USB, a rede Wi-Fi e o recadeiro.
+#
+# Uso: claude-hud-setup [wifi|relay]
+#   sem argumento  grava os dois
+#   wifi           pergunta só o nome e a senha da rede
+#   relay          grava só o recadeiro, sem perguntar nada
+#
+# O endereço e o segredo do recadeiro vêm de CLAUDE_HUD_URL e CLAUDE_HUD_TOKEN,
+# do ambiente ou de ~/.config/claude-hud/env.
+
+set -u
+
+what=${1:-all}
+case $what in
+  all | wifi | relay) ;;
+  *)
+    echo "uso: claude-hud-setup [wifi|relay]" >&2
+    exit 2
+    ;;
+esac
+
+config=${XDG_CONFIG_HOME:-$HOME/.config}/claude-hud/env
+# shellcheck disable=SC1090
+[ -r "$config" ] && . "$config"
+
+device=${CLAUDE_HUD_DEVICE:-}
+if [ -z "$device" ]; then
+  for candidate in /dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_*; do
+    [ -e "$candidate" ] && device=$candidate && break
+  done
+fi
+if [ -z "$device" ] || [ ! -w "$device" ]; then
+  echo "Placa não encontrada. Ligue-a por USB e confira o acesso à porta serial." >&2
+  exit 1
+fi
+
+stty -F "$device" 115200 raw -echo -hupcl
+exec 3<>"$device"
+
+# Descarta o que a placa tenha deixado na fila.
+while read -r -t 0.2 _ <&3; do :; done
+
+# Manda um comando e confere o "ok" da placa.
+command_ok() {
+  local reply
+  printf '%s\n' "$1" >&3
+  read -r -t 3 reply <&3 || reply=
+  [ "${reply%$'\r'}" = ok ]
+}
+
+fail() {
+  echo "$1" >&2
+  exit 1
+}
+
+if [ "$what" != wifi ]; then
+  [ -n "${CLAUDE_HUD_URL:-}" ] && [ -n "${CLAUDE_HUD_TOKEN:-}" ] ||
+    fail "Defina CLAUDE_HUD_URL e CLAUDE_HUD_TOKEN em $config."
+  host=${CLAUDE_HUD_URL#https://}
+  host=${host%%/*}
+  command_ok "set host $host" || fail "A placa não aceitou o endereço do recadeiro."
+  command_ok "set token $CLAUDE_HUD_TOKEN" || fail "A placa não aceitou o segredo do recadeiro."
+  echo "Recadeiro gravado: $host"
+fi
+
+if [ "$what" != relay ]; then
+  read -r -p "Nome da rede Wi-Fi (2,4 GHz): " ssid
+  read -r -s -p "Senha: " password
+  echo
+  command_ok "set ssid $ssid" || fail "A placa não aceitou o nome da rede."
+  command_ok "set pass $password" || fail "A placa não aceitou a senha."
+  echo "Wi-Fi gravado: $ssid"
+fi
+
+command_ok apply || fail "A placa não respondeu ao pedido de reconexão."
+
+echo "Conectando..."
+connected=no
+for _ in $(seq 1 20); do
+  sleep 2
+  printf 'status\n' >&3
+  report=
+  while read -r -t 3 line <&3; do
+    line=${line%$'\r'}
+    [ "$line" = fim ] && break
+    report+="$line"$'\n'
+  done
+  if grep -q '^recadeiro: conectado' <<<"$report"; then
+    connected=yes
+    break
+  fi
+done
+
+printf '%s' "$report"
+if [ "$connected" = yes ]; then
+  echo "Pronto. A placa já pode ir para qualquer fonte USB."
+else
+  echo "A placa ainda não chegou ao recadeiro. Confira a rede, a senha e o endereço." >&2
+  exit 1
+fi

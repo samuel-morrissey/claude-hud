@@ -10,7 +10,8 @@ namespace hud {
 
 class Tracker {
  public:
-  // Linha no formato "<origem> <estado> [id]".
+  // Linha no formato "<origem> <estado> [id]", ou "reset", que esquece todas
+  // as sessões.
   //   origem: pc | cloud | phone
   //   estado: start | idle | thinking | working | waiting | done | end
   // Devolve false quando a linha não é um evento válido.

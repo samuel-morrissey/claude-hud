@@ -7,16 +7,21 @@
 # Lê da entrada padrão o JSON que o Claude Code entrega aos hooks. Nunca falha
 # nem trava: sem ter para onde mandar, sai em silêncio.
 #
-# Na máquina com a placa, o evento vai direto para a serial USB. Em uma máquina
-# remota, vai para um arquivo que o claude-hud-bridge acompanha por ssh.
+# Com CLAUDE_HUD_URL definida, o evento vai para o recadeiro, que o entrega à
+# placa pelo Wi-Fi. Sem ela, vai direto para a serial USB da placa.
 #
 # Variáveis, do ambiente ou de ~/.config/claude-hud/env:
 #   CLAUDE_HUD_SOURCE  origem mostrada no visor: pc (padrão), cloud ou phone
+#   CLAUDE_HUD_URL     endereço do recadeiro, como https://hud.example.com
+#   CLAUDE_HUD_TOKEN   segredo do recadeiro
 #   CLAUDE_HUD_DEVICE  porta serial da placa; por padrão, a primeira Espressif
-#   CLAUDE_HUD_LOG     arquivo de eventos; definido, substitui a serial
 
 state=${1:-}
 [ -n "$state" ] || exit 0
+
+# Os hooks rodam em paralelo; a hora tirada logo aqui é o que permite ao
+# recadeiro pôr os eventos em ordem.
+stamp=$(date +%s%3N)
 
 config=${XDG_CONFIG_HOME:-$HOME/.config}/claude-hud/env
 # shellcheck disable=SC1090
@@ -39,14 +44,10 @@ fi
 
 event="$source_name $state ${session:--}"
 
-if [ -n "${CLAUDE_HUD_LOG:-}" ]; then
-  mkdir -p "$(dirname "$CLAUDE_HUD_LOG")" 2>/dev/null
-  printf '%s %s\n' "$(date +%s)" "$event" >>"$CLAUDE_HUD_LOG" 2>/dev/null
-  # Mantém o arquivo pequeno. Quem acompanha relê o que sobrou e descarta o
-  # que já viu pela hora de cada linha.
-  if [ "$(stat -c %s "$CLAUDE_HUD_LOG" 2>/dev/null || echo 0)" -gt 65536 ]; then
-    kept=$(tail -n 100 "$CLAUDE_HUD_LOG") && printf '%s\n' "$kept" >"$CLAUDE_HUD_LOG"
-  fi
+if [ -n "${CLAUDE_HUD_URL:-}" ]; then
+  curl --silent --max-time 4 --output /dev/null \
+    --header "Authorization: Bearer ${CLAUDE_HUD_TOKEN:-}" \
+    --data "$stamp $event" "${CLAUDE_HUD_URL%/}/events" 2>/dev/null
   exit 0
 fi
 

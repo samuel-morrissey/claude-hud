@@ -1,0 +1,29 @@
+# Recadeiro do claude-hud atrás de um Traefik que publica serviços por labels
+# do Docker e emite certificados Let's Encrypt (resolver "letsencrypt",
+# entrypoint "websecure").
+#
+# Primeira vez: cp .env.example .env, preencha, `docker compose up -d --build`.
+
+services:
+  relay:
+    build: .
+    container_name: claude-hud-relay
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "127.0.0.1:8787:8787"
+    environment:
+      RELAY_TOKEN: ${RELAY_TOKEN:?defina no .env}
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.claude-hud.rule: Host(`${RELAY_HOST:?defina no .env}`)
+      traefik.http.routers.claude-hud.entrypoints: websecure
+      traefik.http.routers.claude-hud.tls.certresolver: letsencrypt
+      traefik.http.services.claude-hud.loadbalancer.server.port: "8787"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8787/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

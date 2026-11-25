@@ -18,6 +18,7 @@ struct View {
   uint8_t sessions;  // sessões abertas, somando todas as origens
   uint32_t now;      // relógio livre, em ms
   uint32_t since;    // ms desde que este estado começou
+  bool offline;      // sem conexão com o recadeiro
 };
 
 // Preenche fb (W*H pixels RGB565, ordem nativa) com o quadro de v.

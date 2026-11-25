@@ -15,6 +15,7 @@ constexpr uint16_t kGray = rgb(130, 126, 120);
 constexpr uint16_t kYellow = rgb(255, 208, 64);
 constexpr uint16_t kGreen = rgb(110, 200, 120);
 constexpr uint16_t kBlue = rgb(110, 170, 240);
+constexpr uint16_t kRed = rgb(230, 80, 70);
 
 // Lado de um "pixel" do boneco, em pixels da tela.
 constexpr int S = 3;
@@ -172,6 +173,12 @@ void sidebar(const View& v) {
   if (v.sessions > 1) number(x + 11, y + 25, v.sessions, kGray);
 }
 
+// Barrinhas de sinal riscadas, no canto de cima.
+void iconOffline(int x, int y) {
+  for (int i = 0; i < 4; i++) rect(x + i * 3, y + 6 - i * 2, 2, 2 + i * 2, kGray);
+  for (int i = 0; i < 9; i++) rect(x + 1 + i, y + i, 2, 1, kRed);
+}
+
 void confetti(uint32_t since) {
   const uint16_t palette[4] = {kYellow, kGreen, kBlue, kWhite};
   for (uint32_t i = 0; i < 16; i++) {
@@ -203,6 +210,7 @@ void render(const View& v, uint16_t* out) {
       if (step >= 2) letterZ(x0 + 63, y0 - 9, 5, kGray);
       if (step >= 3) letterZ(x0 + 70, y0 - 17, 6, kWhite);
       mascot(x0 + 12, y0, p);
+      if (v.offline) iconOffline(2, 2);
       return;
     }
     case State::Idle: {
@@ -253,6 +261,7 @@ void render(const View& v, uint16_t* out) {
 
   mascot(x0, y0, p);
   sidebar(v);
+  if (v.offline) iconOffline(2, 2);
 }
 
 }  // namespace hud

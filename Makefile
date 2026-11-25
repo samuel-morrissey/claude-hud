@@ -12,7 +12,7 @@ flash:
 
 test: $(BUILD)/test_tracker
 	$(BUILD)/test_tracker
-	python3 test/test_bridge.py
+	python3 test/test_relay.py
 
 preview: $(BUILD)/preview
 	$(BUILD)/preview | python3 tools/ppm2png.py $(BUILD)/preview.png
